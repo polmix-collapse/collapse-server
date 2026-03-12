@@ -14,11 +14,8 @@ const io = new Server(server, {
   transports: ['websocket', 'polling']
 });
 
-// ================== ТВОИ ДАННЫЕ ==================
-const START_ZONE = {
-  position: [53.160066, 24.491418],
-  radius: 7
-};
+// КОНФИГУРАЦИЯ
+const START_ZONE = { position: [53.160066, 24.491418], radius: 7 };
 
 const SAFE_TREES = [
   { id: 'tree_1', position: [53.158571, 24.491794], radius: 4.5 },
@@ -37,13 +34,14 @@ const HAUNTER_VARIANTS = {
 
 const START_MUSIC = ['start_1.mp3', 'start_2.mp3', 'start_3.mp3', 'start_4.mp3', 'start_5.mp3'];
 const DEATH_SOUND = 'death.mp3';
-// ==================================================
 
+// СОСТОЯНИЕ
 let gameStarted = false;
 let players = new Map();
 let haunterTimer = null;
 let gameId = 'game_' + Date.now();
 
+// ФУНКЦИИ
 function calculateDistance(lat1, lon1, lat2, lon2) {
   const R = 6371e3;
   const φ1 = lat1 * Math.PI / 180;
@@ -81,12 +79,17 @@ function killPlayer(playerId, type) {
   io.to(playerId).emit('play_sound', { sound: DEATH_SOUND, gameId });
   io.emit('player_died', { playerId, playerName: p.name, cause: type, gameId });
   setTimeout(() => {
-    if (players.has(playerId)) { players.get(playerId).alive = true; io.to(playerId).emit('respawned'); }
+    if (players.has(playerId)) { 
+      players.get(playerId).alive = true; 
+      io.to(playerId).emit('respawned'); 
+    }
   }, 30000);
 }
 
 function checkHaunterSurvival(type) {
-  getAlivePlayers().forEach(p => { if (!isPlayerSafe(p.position)) killPlayer(p.id, type); });
+  getAlivePlayers().forEach(p => { 
+    if (!isPlayerSafe(p.position)) killPlayer(p.id, type); 
+  });
 }
 
 function spawnHaunter() {
@@ -109,18 +112,43 @@ function startGame() {
   haunterTimer = setTimeout(spawnHaunter, delay);
 }
 
+// ROUTES
 app.get('/', (req, res) => res.send('✅ Collapse Research Center Server Online'));
 app.get('/status', (req, res) => res.json({ gameStarted, gameId, players: players.size, alive: getAlivePlayers().length }));
+// SOCKET
 io.on('connection', (socket) => {
-  players.set(socket.id, { id: socket.id, position: null, alive: true, name: 'Игрок_' + Math.floor(Math.random()*1000) });
-  socket.emit('game_config', { startZone: START_ZONE, safeTrees: SAFE_TREES, haunterVariants: HAUNTER_VARIANTS, gameId });
+  players.set(socket.id, { 
+    id: socket.id, 
+    position: null, 
+    alive: true, 
+    name: 'Игрок_' + Math.floor(Math.random()*1000) 
+  });
+  
+  socket.emit('game_config', { 
+    startZone: START_ZONE, 
+    safeTrees: SAFE_TREES, 
+    haunterVariants: HAUNTER_VARIANTS, 
+    gameId 
+  });
+  
   socket.on('update_position', (pos) => {
     let p = players.get(socket.id);
-    if (p) { p.position = pos; if (!gameStarted && isInStartZone(pos)) startGame(); }
+    if (p) { 
+      p.position = pos; 
+      if (!gameStarted && isInStartZone(pos)) startGame(); 
+    }
   });
-  socket.on('disconnect', () => { players.delete(socket.id); if (players.size === 0) { gameStarted = false; if (haunterTimer) clearTimeout(haunterTimer); } });
+  
+  socket.on('disconnect', () => { 
+    players.delete(socket.id); 
+    if (players.size === 0) { 
+      gameStarted = false; 
+      if (haunterTimer) clearTimeout(haunterTimer); 
+    }
+  });
 });
 
 const PORT = process.env.PORT || 3000;
-
-server.listen(PORT, '0.0.0.0', () => console.log("🚀 Сервер на порту ${PORT}");
+server.listen(PORT, '0.0.0.0', () => {
+  console.log('🚀 Сервер на порту ' + PORT);
+});
