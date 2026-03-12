@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Collapse RC - Полевой тест</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        body { 
+            background: #0a0a0a; 
+            color: #00ff00; 
+            font-family: 'Courier New', monospace;
+            margin: 0;
+            padding: 20px;
+            text-align: center;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: #1a1a1a;
+            border-radius: 15px;
+            padding: 20px;
+            border: 2px solid #00ff00;
+        }
+        h1 {
+            color: #00ff00;
+            text-shadow: 0 0 10px #00ff00;
+        }
+        .status {
+            font-size: 24px;
+            margin: 20px 0;
+            padding: 20px;
+            border-radius: 10px;
+            background: #0f0f0f;
+        }
+        .coord {
+            font-size: 18px;
+            color: #ffff00;
+        }
+        .safe { color: #00ff00; }
+        .danger { color: #ff0000; }
+        .dead { color: #ff0000; animation: blink 1s infinite; }
+        @keyframes blink {
+            0% { opacity: 1; }
+            50% { opacity: 0.3; }
+            100% { opacity: 1; }
+        }
+        .log {
+            text-align: left;
+            max-height: 200px;
+            overflow-y: auto;
+            background: #0f0f0f;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+        button {
+            background: #00ff00;
+            color: #000;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 5px;
+            margin: 10px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 COLLAPSE RESEARCH CENTER</h1>
+        <div class="status" id="connectionStatus">🔴 Ожидание подключения...</div>
+        
+        <div id="positionDisplay" class="coord">📍 Координаты: --</div>
+        <div id="safetyDisplay" class="coord">🛡 Статус: --</div>
+        <div id="gameStatus" class="coord">🎮 Игра: --</div>
+        
+        <button onclick="testSound()">🔊 Тест звука</button>
+        <button onclick="copyCoords()">📋 Копировать координаты</button>
+        
+        <div class="log" id="log">
+            📝 Журнал событий:
+        </div>
+    </div>
+
+    <script>
+        let socket;
+        let playerId;
+        let logDiv = document.getElementById('log');
+        
+        function log(message) {
+            let entry = document.createElement('div');
+            entry.textContent = '[' + new Date().toLocaleTimeString() + '] ' + message;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        // Подключение к серверу
+        function connect() {
+            let serverUrl = window.location.href.replace(/\/$/, '');
+            socket = io(serverUrl);
+            
+            socket.on('connect', () => {
+                playerId = socket.id;
+                document.getElementById('connectionStatus').innerHTML = '✅ ПОДКЛЮЧЕНО К СЕРВЕРУ';
+                document.getElementById('connectionStatus').style.color = '#00ff00';
+                log('✅ Подключено к серверу');
+            });
+            
+            socket.on('disconnect', () => {
+                document.getElementById('connectionStatus').innerHTML = '🔴 ПОТЕРЯНО СОЕДИНЕНИЕ';
+                document.getElementById('connectionStatus').style.color = '#ff0000';
+                log('🔴 Отключено от сервера');
+            });
+            
+            socket.on('game_config', (config) => {
+                log('📦 Получена конфигурация игры');
+console.log('Конфиг:', config);
+            });
+            
+            socket.on('play_sound', (data) => {
+                log('🔊 ЗВУК: ' + data.sound);
+                // Здесь позже будет реальное воспроизведение звука
+            });
+            
+            socket.on('player_died', (data) => {
+                if (data.playerId === playerId) {
+                    document.getElementById('safetyDisplay').innerHTML = '💀 ВЫ ПОГИБЛИ от ' + data.cause;
+                    document.getElementById('safetyDisplay').className = 'dead';
+                    log('💀 ВЫ ПОГИБЛИ от ' + data.cause);
+                } else {
+                    log('💀 Игрок ' + data.playerName + ' погиб от ' + data.cause);
+                }
+            });
+            
+            socket.on('respawned', () => {
+                document.getElementById('safetyDisplay').innerHTML = '✨ ВЫ ВОСКРЕСЛИ';
+                document.getElementById('safetyDisplay').className = 'safe';
+                log('✨ Вы воскресли');
+            });
+        }
+        
+        // GPS слежение
+        function startGPS() {
+            if (navigator.geolocation) {
+                navigator.geolocation.watchPosition(
+                    (position) => {
+                        let lat = position.coords.latitude;
+                        let lng = position.coords.longitude;
+                        let accuracy = position.coords.accuracy;
+                        
+                        document.getElementById('positionDisplay').innerHTML = 
+                            📍 Координаты: ${lat.toFixed(6)}, ${lng.toFixed(6)} ±${accuracy.toFixed(1)}м;
+                        
+                        if (socket && socket.connected) {
+                            socket.emit('update_position', [lat, lng]);
+                        }
+                    },
+                    (error) => {
+                        document.getElementById('positionDisplay').innerHTML = '❌ Ошибка GPS: ' + error.message;
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        maximumAge: 0,
+                        timeout: 10000
+                    }
+                );
+                log('📍 GPS запущен');
+            } else {
+                log('❌ GPS не поддерживается');
+            }
+        }
+        
+        // Тест звука
+        function testSound() {
+            if (socket && socket.connected) {
+                socket.emit('test_sound');
+                log('🔊 Тестовый звук отправлен');
+            }
+        }
+        
+        // Копирование координат
+        function copyCoords() {
+            let posDiv = document.getElementById('positionDisplay').innerHTML;
+            let coords = posDiv.match(/[0-9.-]+, [0-9.-]+/);
+            if (coords) {
+                navigator.clipboard.writeText(coords[0]);
+                log('📋 Координаты скопированы');
+            }
+        }
+        
+        // Запуск
+        window.onload = () => {
+            connect();
+            startGPS();
+        };
+    </script>
+</body>
+</html>
