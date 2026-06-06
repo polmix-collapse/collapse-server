@@ -7,13 +7,19 @@
     <style>
         body { background: #0a0a0a; color: #0f0; font-family: monospace; padding: 20px; text-align: center; }
         .box { background: #1a1a1a; border: 2px solid #0f0; border-radius: 10px; padding: 20px; margin: 10px 0; }
-        button { background: #0f0; color: #000; border: none; padding: 15px; margin: 5px; font-size: 18px; border-radius: 10px; font-weight: bold; }
+        button { background: #0f0; color: #000; border: none; padding: 15px; margin: 5px; font-size: 18px; border-radius: 10px; font-weight: bold; cursor: pointer; }
         .force { background: #f60; color: #000; }
         .log { text-align: left; max-height: 200px; overflow-y: auto; font-size: 12px; }
+        .unlock-hint { background: #333; color: #ff0; padding: 10px; border-radius: 10px; margin: 10px 0; font-size: 14px; }
     </style>
 </head>
 <body>
     <h1>🧪 COLLAPSE RC</h1>
+    
+    <div class="unlock-hint" id="unlockHint">
+        🔇 КОСНИСЬ ЭКРАНА, ЧТОБЫ РАЗБЛОКИРОВАТЬ ЗВУК
+    </div>
+    
     <div class="box" id="statusBox">
         <div id="status">🔴 Подключение...</div>
         <div id="gpsStatus">📍 GPS: ожидание...</div>
@@ -34,11 +40,73 @@
         let socket;
         let myId;
         let lastLat = null, lastLng = null;
+        let audioCtx = null;
+        let soundUnlocked = false;
         
         function log(msg) {
             let logDiv = document.getElementById('log');
             logDiv.innerHTML += '[' + new Date().toLocaleTimeString() + '] ' + msg + '<br>';
             console.log(msg);
+        }
+        
+        // РАЗБЛОКИРОВКА ЗВУКА
+        function unlockAudio() {
+            if (soundUnlocked) return;
+            
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume().then(() => {
+                    soundUnlocked = true;
+                    document.getElementById('unlockHint').innerHTML = '🔊 ЗВУК РАЗБЛОКИРОВАН!';
+                    document.getElementById('unlockHint').style.background = '#0f0';
+                    document.getElementById('unlockHint').style.color = '#000';
+                    log('🔊 Аудио разблокировано');
+                    
+                    // Короткий бип для подтверждения
+                    let osc = audioCtx.createOscillator();
+                    let gain = audioCtx.createGain();
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.frequency.value = 440;
+                    gain.gain.value = 0.2;
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.2);
+                }).catch(e => log('❌ Ошибка разблокировки: ' + e));
+            } else {
+                soundUnlocked = true;
+                document.getElementById('unlockHint').style.display = 'none';
+                log('🔊 Аудио уже активно');
+            }
+        }
+        
+        // ЗВУК (пищалка)
+        function playBeep() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            
+            if (audioCtx.state === 'suspended') {
+                log('⏸️ Аудио заблокировано, коснись экрана');
+                return false;
+}
+            
+            try {
+                let osc = audioCtx.createOscillator();
+                let gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.frequency.value = 880;
+                gain.gain.value = 0.3;
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.3);
+                return true;
+            } catch(e) {
+                log('❌ Ошибка воспроизведения: ' + e.message);
+                return false;
+            }
         }
         
         // ПОДКЛЮЧЕНИЕ К СЕРВЕРУ
@@ -75,7 +143,7 @@
             });
             
             socket.on('play_sound', (data) => {
-                log('🔊 ЗВУК: ' + data.sound);
+                log('🔊 КОМАНДА: ' + data.sound);
                 playBeep();
             });
             
@@ -90,26 +158,6 @@
             socket.on('respawned', () => {
                 log('✨ ВОСКРЕСЛИ');
             });
-        }
-        
-        // ЗВУК (пищалка)
-        let audioCtx = null;
-        function playBeep() {
-            if (!audioCtx) {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                }
-            if (audioCtx.state === 'suspended') {
-                audioCtx.resume();
-            }
-            let osc = audioCtx.createOscillator();
-            let gain = audioCtx.createGain();
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            osc.frequency.value = 880;
-            gain.gain.value = 0.3;
-            osc.start();
-            osc.stop(audioCtx.currentTime + 0.3);
-            log('🔊 Бип!');
         }
         
         // GPS
@@ -131,9 +179,18 @@
                     document.getElementById('gpsStatus').innerHTML = '✅ GPS работает (точность ' + acc.toFixed(0) + 'м)';
                     document.getElementById('pos').innerHTML = '📍 ' + lat.toFixed(6) + ', ' + lng.toFixed(6);
                     
+                    // Простейшая проверка стартовой зоны (позже заменим на нормальную)
+                    const startLat = 53.160066;
+                    const startLng = 24.491418;
+                    const dist = Math.sqrt(Math.pow(lat - startLat, 2) + Math.pow(lng - startLng, 2)) * 111000;
+                    if (dist < 7) {
+                        document.getElementById('zone').innerHTML = '🚪 Стартовая зона: ✅ ВНУТРИ ( ' + dist.toFixed(1) + 'м )';
+                        } else {
+                        document.getElementById('zone').innerHTML = '🚪 Стартовая зона: ❌ снаружи ( ' + dist.toFixed(1) + 'м до центра )';
+                    }
+                    
                     if (socket && socket.connected) {
                         socket.emit('update_position', [lat, lng]);
-                        log('📍 Отправлено: ' + lat.toFixed(6) + ', ' + lng.toFixed(6));
                     }
                 },
                 (err) => {
@@ -146,12 +203,20 @@
         }
         
         function testSound() {
+            // Разблокируем звук при нажатии на кнопку
+            if (!soundUnlocked) {
+                unlockAudio();
+                setTimeout(() => {
+                    playBeep();
+                    log('🔊 Тест звука (после разблокировки)');
+                }, 100);
+            } else {
+                playBeep();
+                log('🔊 Тест звука');
+            }
+            
             if (socket && socket.connected) {
                 socket.emit('test_sound');
-                log('🔊 Тестовый сигнал отправлен');
-            } else {
-                log('❌ Нет соединения');
-                playBeep();
             }
         }
         
@@ -174,9 +239,28 @@
             }
         }
         
+        // Обработчик касания экрана для разблокировки звука
+        function onScreenTouch() {
+            unlockAudio();
+            document.removeEventListener('touchstart', onScreenTouch);
+            document.removeEventListener('click', onScreenTouch);
+        }
+        
+        // ЗАПУСК
         window.onload = () => {
             connect();
             startGPS();
+            
+            // Разблокировка звука при первом касании экрана
+            document.addEventListener('touchstart', onScreenTouch);
+            document.addEventListener('click', onScreenTouch);
+            
+            // Подсказка в логе
+            setTimeout(() => {
+                if (!soundUnlocked) {
+                    log('🔇 Коснись экрана, чтобы разблокировать звук');
+                }
+            }, 2000);
         };
     </script>
 </body>
