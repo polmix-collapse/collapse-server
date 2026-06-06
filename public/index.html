@@ -1,390 +1,182 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Collapse RC - Полевой тест</title>
+    <title>Collapse RC - Тест</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <style>
-        body { 
-            background: #0a0a0a; 
-            color: #00ff00; 
-            font-family: 'Courier New', monospace;
-            margin: 0;
-            padding: 20px;
-            text-align: center;
-        }
-        .container {
-            max-width: 600px;
-            margin: 0 auto;
-            background: #1a1a1a;
-            border-radius: 15px;
-            padding: 20px;
-            border: 2px solid #00ff00;
-        }
-        h1 {
-            color: #00ff00;
-            text-shadow: 0 0 10px #00ff00;
-            font-size: 24px;
-        }
-        .status {
-            font-size: 20px;
-            margin: 20px 0;
-            padding: 15px;
-            border-radius: 10px;
-            background: #0f0f0f;
-        }
-        .coord {
-            font-size: 16px;
-            margin: 10px 0;
-            padding: 10px;
-            background: #0f0f0f;
-            border-radius: 5px;
-        }
-        .safe { color: #00ff00; }
-        .danger { color: #ff0000; }
-        .dead { color: #ff0000; animation: blink 1s infinite; }
-        @keyframes blink {
-            0% { opacity: 1; }
-            50% { opacity: 0.3; }
-            100% { opacity: 1; }
-        }
-        .log {
-            text-align: left;
-            max-height: 300px;
-            overflow-y: auto;
-            background: #0f0f0f;
-            padding: 10px;
-            border-radius: 5px;
-            margin-top: 20px;
-            font-size: 12px;
-        }
-        button {
-            background: #00ff00;
-            color: #000;
-            border: none;
-            padding: 12px 24px;
-            font-size: 16px;
-            border-radius: 5px;
-            margin: 10px 5px;
-            cursor: pointer;
-            font-weight: bold;
-        }
-        .force-start {
-            background: #ff6600;
-        }
-        .coord-highlight {
-            background: #00ff00;
-            color: #000;
-            font-weight: bold;
-        }
-        .tree-list {
-            font-size: 11px;
-            text-align: left;
-            max-height: 150px;
-            overflow-y: auto;
-        }
+        body { background: #0a0a0a; color: #0f0; font-family: monospace; padding: 20px; text-align: center; }
+        .box { background: #1a1a1a; border: 2px solid #0f0; border-radius: 10px; padding: 20px; margin: 10px 0; }
+        button { background: #0f0; color: #000; border: none; padding: 15px; margin: 5px; font-size: 18px; border-radius: 10px; font-weight: bold; }
+        .force { background: #f60; color: #000; }
+        .log { text-align: left; max-height: 200px; overflow-y: auto; font-size: 12px; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>🧪 COLLAPSE RESEARCH CENTER</h1>
-        <h2>ФАЗА 1: Дорога Страшноездов</h2>
-        
-        <div class="status" id="connectionStatus">
-            🔴 Ожидание подключения...
-        </div>
-        
-        <div class="coord" id="positionDisplay">
-            📍 Координаты: ожидание GPS...
-        </div>
-        
-        <div class="coord" id="accuracyDisplay">
-            🎯 Точность: -- м
-        </div>
-        
-        <div class="coord" id="safetyDisplay">
-            🛡 Статус: -- 
-        </div>
-        
-        <div class="coord" id="gameStatus">
-            🎮 Игра: -- 
-        </div>
-        
-        <div class="coord" id="zoneStatus">
-            🚪 Стартовая зона: -- 
-        </div>
-        
-        <button onclick="testSound()">🔊 Тест звука</button>
-        <button onclick="copyCoords()">📋 Копировать координаты</button>
-        <button class="force-start" onclick="forceStart()">⚠️ ПРИНУДИТЕЛЬНЫЙ СТАРТ</button>
-        
-        <h3>🌲 Деревья-укрытия:</h3>
-        <div class="tree-list" id="treeList"></div>
-        
-        <h3>📝 Журнал событий:</h3>
-        <div class="log" id="log">
-            [--:--:--] Ожидание событий...
-        </div>
+    <h1>🧪 COLLAPSE RC</h1>
+    <div class="box" id="statusBox">
+        <div id="status">🔴 Подключение...</div>
+        <div id="gpsStatus">📍 GPS: ожидание...</div>
+        <div id="pos">Координаты: --</div>
+        <div id="zone">Стартовая зона: --</div>
+        <div id="gameState">Игра: --</div>
     </div>
-
+    
+    <button onclick="testSound()">🔊 Тест звука</button>
+    <button class="force" onclick="forceStart()">⚠️ Принудительный старт</button>
+    <button onclick="copyPos()">📋 Копировать координаты</button>
+    
+    <div class="box log" id="log">
+        📝 Журнал:<br>
+    </div>
+    
     <script>
         let socket;
-        let playerId;
-        let logDiv = document.getElementById('log');
-        let lastPosition = null;
+        let myId;
+        let lastLat = null, lastLng = null;
         
-        // Звуковой синтезатор
-         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      functionplayBeep(type) {
-            const oscillator = audioCtx.createOscillator();
-            const gainNode = audioCtx.createGain();
-            oscillator.connect(gainNode);
-            gainNode.connect(audioCtx.destination);
-            
-            switch(type) {
-                case 'start':
-                    oscillator.frequency.value = 440;
-                    gainNode.gain.value = 0.3;
-                    oscillator.start();
-                    oscillator.stop(audioCtx.currentTime + 2);
-                    log('🎵 СТАРТОВАЯ МЕЛОДИЯ');
-                    break;
-                case 'scary':
-                    oscillator.frequency.value = 220;
-                    gainNode.gain.value = 0.5;
-                    oscillator.frequency.setValueAtTime(220, audioCtx.currentTime);
-                    oscillator.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.5);
-                    oscillator.start();
-                    oscillator.stop(audioCtx.currentTime + 1.5);
-                    log('👹 СТРАШНОЕЗД! Беги к дереву!');
-                    break;
-                case 'death':
-                    oscillator.frequency.value = 100;
-                    gainNode.gain.value = 0.7;
-                    gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 1.5);
-                    oscillator.start();
-                    oscillator.stop(audioCtx.currentTime + 2);
-                    log('💀 ВЫ ПОГИБЛИ');
-                    break;
-                default:
-                    oscillator.frequency.value = 880;
-                    gainNode.gain.value = 0.2;
-                    oscillator.start();
-                    oscillator.stop(audioCtx.currentTime + 0.3);
-            }
+        function log(msg) {
+            let logDiv = document.getElementById('log');
+            logDiv.innerHTML += '[' + new Date().toLocaleTimeString() + '] ' + msg + '<br>';
+            console.log(msg);
         }
         
-       function playSound(soundName) {
-    // Пытаемся найти файл на сервере
-    let soundUrl = '/sounds/' + soundName;
-    
-    // Создаём аудио элемент
-    let audio = new Audio(soundUrl);
-    
-    // Обработчик успешной загрузки
-    audio.oncanplaythrough = () => {
-        audio.play().catch(e => {
-            log('⚠️ Ошибка воспроизведения: ' + e.message);
-            // Если не получилось — используем синтезатор
-            fallbackBeep(soundName);
-        });
-    };
-    
-    // Обработчик ошибки загрузки (файла нет)
-    audio.onerror = () => {
-        log('⚠️ Файл не найден: ' + soundName + ', использую синтезатор');
-        fallbackBeep(soundName);
-    };
-    
-    // Таймаут на всякий случай
-    setTimeout(() => {
-        if (audio.readyState === 0) {
-            log('⚠️ Таймаут загрузки: ' + soundName);
-            fallbackBeep(soundName);
-        }
-    }, 2000);
-}
-
-function fallbackBeep(soundName) {
-    // Запасной синтезатор на случай, если нет mp3
-    const oscillator = audioCtx.createOscillator();
-    const gainNode = audioCtx.createGain();
-    oscillator.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
-    
-    if (soundName.includes('start')) {
-        oscillator.frequency.value = 440;
-        gainNode.gain.value = 0.3;
-        oscillator.start();
-        oscillator.stop(audioCtx.currentTime + 2);
-    } else if (soundName.includes('scaryride')  soundName.includes('slower')  soundName.includes('rusher')) {
-        oscillator.frequency.value = 220;
-        gainNode.gain.value = 0.5;
-        oscillator.frequency.setValueAtTime(220, audioCtx.currentTime);
-        oscillator.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.5);
-        oscillator.start();
-        oscillator.stop(audioCtx.currentTime + 1.5);
-    } else if (soundName.includes('death')) {
-        oscillator.frequency.value = 100;
-        gainNode.gain.value = 0.7;
-        gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 1.5);
-        oscillator.start();
-        oscillator.stop(audioCtx.currentTime + 2);
-    }
-}
-        }
-        
-        function log(message) {
-            let entry = document.createElement('div');
-            let time = new Date().toLocaleTimeString();
-            entry.textContent = '[' + time + '] ' + message;
-            logDiv.appendChild(entry);
-            logDiv.scrollTop = logDiv.scrollHeight;
-            console.log(message);
-        }
-        
-        // Подключение к серверу
+        // ПОДКЛЮЧЕНИЕ К СЕРВЕРУ
         function connect() {
-            let serverUrl = window.location.origin;
-            log('🔌 Подключение к ' + serverUrl);
-            socket = io(serverUrl);
+            let url = window.location.origin;
+            log('🔌 Подключаюсь к ' + url);
+            
+            socket = io(url, {
+                transports: ['websocket', 'polling'],
+                reconnection: true,
+                reconnectionAttempts: 10
+            });
             
             socket.on('connect', () => {
-                playerId = socket.id;
-                document.getElementById('connectionStatus').innerHTML = '✅ ПОДКЛЮЧЕНО К СЕРВЕРУ';
-                document.getElementById('connectionStatus').style.color = '#00ff00';
-                log('✅ Подключено! ID: ' + playerId.substring(0, 8));
+                myId = socket.id;
+                document.getElementById('status').innerHTML = '✅ ПОДКЛЮЧЕНО! ID: ' + myId.substring(0,6);
+                document.getElementById('status').style.color = '#0f0';
+                log('✅ Подключено!');
+            });
+            
+            socket.on('connect_error', (err) => {
+                document.getElementById('status').innerHTML = '❌ Ошибка: ' + err.message;
+                log('❌ Ошибка подключения: ' + err.message);
             });
             
             socket.on('disconnect', () => {
-                document.getElementById('connectionStatus').innerHTML = '🔴 ПОТЕРЯНО СОЕДИНЕНИЕ';
-                document.getElementById('connectionStatus').style.color = '#ff0000';
-                log('🔴 Отключено от сервера');
+                document.getElementById('status').innerHTML = '🔴 ОТКЛЮЧЕНО';
+                log('🔴 Отключено');
             });
             
-            socket.on('game_config', (config) => {
-                log('📦 Получена конфигурация');
-                log('📍 Стартовая зона: ' + config.startZone.position[0].toFixed(6) + ', ' + config.startZone.position[1].toFixed(6));
-                log('🌲 Деревьев: ' + config.safeTrees.length);
-                
-                // Отображаем деревья
-                let treeHtml = '';
-                config.safeTrees.forEach((tree, idx) => {treeHtml += <div>🌲 ${idx+1}: ${tree.position[0].toFixed(6)}, ${tree.position[1].toFixed(6)} (радиус ${tree.radius}м)</div>;
-                });
-                document.getElementById('treeList').innerHTML = treeHtml;
+            socket.on('game_config', (cfg) => {
+                log('📦 Конфиг получен! Деревьев: ' + cfg.safeTrees.length);
+                log('📍 Старт: ' + cfg.startZone.position[0].toFixed(6) + ', ' + cfg.startZone.position[1].toFixed(6));
             });
             
             socket.on('play_sound', (data) => {
-                log('🔊 КОМАНДА: ' + data.sound);
-                playSound(data.sound);
+                log('🔊 ЗВУК: ' + data.sound);
+                playBeep();
             });
             
             socket.on('player_died', (data) => {
-                if (data.playerId === playerId) {
-                    document.getElementById('safetyDisplay').innerHTML = '💀 ВЫ ПОГИБЛИ от ' + data.cause;
-                    document.getElementById('safetyDisplay').className = 'dead';
-                    log('💀 ВЫ ПОГИБЛИ от ' + data.cause);
-                    playSound('death');
+                if (data.playerId === myId) {
+                    log('💀 ВЫ УМЕРЛИ от ' + data.cause);
                 } else {
-                    log('💀 Игрок ' + data.playerName + ' погиб от ' + data.cause);
+                    log('💀 ' + data.playerName + ' умер');
                 }
             });
             
             socket.on('respawned', () => {
-                document.getElementById('safetyDisplay').innerHTML = '✨ ВЫ ВОСКРЕСЛИ';
-                document.getElementById('safetyDisplay').className = 'safe';
-                log('✨ Вы воскресли');
+                log('✨ ВОСКРЕСЛИ');
             });
         }
         
-        // GPS слежение
+        // ЗВУК (пищалка)
+        let audioCtx = null;
+        function playBeep() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            let osc = audioCtx.createOscillator();
+            let gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.frequency.value = 880;
+            gain.gain.value = 0.3;
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.3);
+            log('🔊 Бип!');
+        }
+        
+        // GPS
         function startGPS() {
             if (!navigator.geolocation) {
-                log('❌ GPS не поддерживается браузером!');
-                document.getElementById('positionDisplay').innerHTML = '❌ GPS НЕ ПОДДЕРЖИВАЕТСЯ';
+                document.getElementById('gpsStatus').innerHTML = '❌ GPS не поддерживается';
+                log('❌ GPS нет');
                 return;
             }
             
-            log('📍 Запуск GPS...');
-            
             navigator.geolocation.watchPosition(
-                (position) => {
-                    let lat = position.coords.latitude;
-                    let lng = position.coords.longitude;
-                    let accuracy = position.coords.accuracy;
+                (pos) => {
+                    let lat = pos.coords.latitude;
+                    let lng = pos.coords.longitude;
+                    let acc = pos.coords.accuracy;
+                    lastLat = lat;
+                    lastLng = lng;
                     
-                    lastPosition = [lat, lng];
-                    
-                    document.getElementById('positionDisplay').innerHTML = 
-                        📍 Координаты: <span class="coord-highlight">${lat.toFixed(6)}</span>, <span class="coord-highlight">${lng.toFixed(6)}</span>;
-                    document.getElementById('accuracyDisplay').innerHTML = 
-                        🎯 Точность: ${accuracy.toFixed(1)} метров;
+                    document.getElementById('gpsStatus').innerHTML = '✅ GPS работает (точность ' + acc.toFixed(0) + 'м)';
+                    document.getElementById('pos').innerHTML = '📍 ' + lat.toFixed(6) + ', ' + lng.toFixed(6);
                     
                     if (socket && socket.connected) {
                         socket.emit('update_position', [lat, lng]);
+                        log('📍 Отправлено: ' + lat.toFixed(6) + ', ' + lng.toFixed(6));
                     }
                 },
-                (error) => {
-                    let errorMsg = 'Ошибка GPS: ';
-                    switch(error.code) {
-                        case 1: errorMsg += 'Нет разрешения'; break;
-                        case 2: errorMsg += 'Сигнал недоступен'; break;
-                        case 3: errorMsg += 'Таймаут'; break;
-                        default: errorMsg += error.message;
-                    }
-                    document.getElementById('positionDisplay').innerHTML = '❌ ' + errorMsg;
-                    log('❌ ' + errorMsg);
+                (err) => {
+                    document.getElementById('gpsStatus').innerHTML = '❌ Ошибка GPS';
+                    log('❌ GPS ошибка: ' + err.message);
                 },
-                {
-                    enableHighAccuracy: true,
-                    maximumAge: 0,
-                    timeout: 15000
-                }
+                { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
             );
-            log('📍 GPS запущен (высокая точность)');
+            log('📍 GPS запущен');
         }
         
-        // Принудительный старт
+        function testSound() {
+            if (socket && socket.connected) {
+                socket.emit('test_sound');
+                log('🔊 Тестовый сигнал отправлен');
+            } else {
+                log('❌ Нет соединения');
+                playBeep();
+            }
+        }
+        
         function forceStart() {
             if (socket && socket.connected) {
                 socket.emit('force_start');
-                log('🚨 Отправлена команда ПРИНУДИТЕЛЬНОГО СТАРТА');
+                log('🚨 ПРИНУДИТЕЛЬНЫЙ СТАРТ!');
             } else {
-                log('❌ Нет соединения с сервером');
+                log('❌ Нет соединения для старта');
             }
         }
         
-        // Тест звука
-        function testSound() {
-            playBeep('test');
-            log('🔊 Тест звука');
-        }
-        
-        // Копирование координат
-      function copyCoords() {
-            if (lastPosition) {
-                let coords = lastPosition[0].toFixed(6) + ', ' + lastPosition[1].toFixed(6);
+        function copyPos() {
+            if (lastLat && lastLng) {
+                let coords = lastLat.toFixed(6) + ', ' + lastLng.toFixed(6);
                 navigator.clipboard.writeText(coords);
-                log('📋 Координаты скопированы: ' + coords);
+                log('📋 Скопировано: ' + coords);
             } else {
-                log('⚠️ Нет координат для копирования');
+                log('⚠️ Нет координат');
             }
         }
         
-        // Запуск
         window.onload = () => {
             connect();
             startGPS();
-            
-            // Разблокируем аудио после первого клика
-            document.body.addEventListener('click', () => {
-                if (audioCtx.state === 'suspended') {
-                    audioCtx.resume();
-                    log('🔊 Звук разблокирован');
-                }
-            }, { once: true });
-            
-            log('🚀 Страница загружена, ожидание GPS...');
         };
     </script>
 </body>
